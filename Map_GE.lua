@@ -1155,21 +1155,54 @@ function drawDoorReachability(object)
 
 end
 
+function drawActivatableRange(object)
+	-- Radius 2m, or 4m for an aircraft.
+	-- Our angle must also be within 22.5 degrees, or 120 for the aircraft
+	local radius = 200
+	if object.data_reader.current_data.type == 0x28 then
+		radius = 400
+	end
+
+	local pos = object.data_reader:get_value("position")
+
+	draw_circle({
+		x = pos.x,
+		y = pos.y,
+		z = pos.z,
+		radius = radius,
+		outer_color = make_rgb(0,1,0),
+		force=true,
+	})
+end
+
+-- ! Activatable objects are only obtained once, otherwise we'll have to repeatedly reparse scripts
+local activatableObjects = ScriptData.getActivatableObjects()
+
 function draw_static_objects(_bounds)
 	local count = 0
 	local collisions = {}
 
 	objects.quadtree:find_collisions(_bounds, collisions)
 
+	-- Draw the lines and collect together the objects which are on screen
 	onscreenObjs = {}
-
 	for key, edge in pairs(collisions) do
 		onscreenObjs[edge.object.data_reader.current_address] = edge.object
 		draw_line(edge)
 	end
 
-	-- Only on screen objects now, rather than all static objects - clean :)
+	-- Iterate over just the activatable objects
+	-- TODO check they are on-screen, though our 2 on frigate don't have collision
+	for _, objAddr in ipairs(activatableObjects) do
+		-- Create a mock obj
+		local actObj = {}
+		actObj.data_reader = ObjectDataReader.create()
+		actObj.data_reader.current_address = objAddr
+		actObj.data_reader.current_data = ObjectData.get_data(objAddr)
+		drawActivatableRange(actObj)
+	end
 
+	-- Iterate over all on screen objects
 	for _, object in pairs(onscreenObjs) do
 		local position = object.data_reader:get_value("position")
 		drawGuardCirclesForDoor(object, position)
