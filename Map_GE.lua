@@ -60,7 +60,7 @@ camera.zoom_max = 100.0
 camera.zoom_step = 0.5
 camera.switch_mode_key = "M"
 camera.switch_floor_key = "F"
-camera.zoom_in_key = "Plus" --"NumberPadPlus"
+camera.zoom_in_key = "Equals" --"NumberPadPlus"
 camera.zoom_out_key = "Minus" --"NumberPadMinus"
 
 local mission = {}
