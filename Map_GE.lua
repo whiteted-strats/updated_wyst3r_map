@@ -7,12 +7,12 @@ require "Utilities\\GE\\GuardDataReader"
 require "Utilities\\GE\\ObjectDataReader"
 require "Utilities\\GE\\ProjectileDataReader"
 require "Utilities\\GE\\ExplosionDataReader"
-require "guard_LOS"
+--require "guard_LOS"
 
--- Various slightly hacky extensions
-drawTrevLOS = false			-- For caverns
-guardHeightForDoors = nil	-- 210 for aztec glass
-drawBorisWhiskers = false	-- For Bunker 1
+-- [Draw circles around doors showing where guards can open them from]
+--	 * nil to disable
+--   * 210 for aztec glass
+guardHeightForDoors = nil	
 
 local screen = {}
 
@@ -1355,13 +1355,13 @@ function draw_guard(_guard_data_reader)
 
 
 	-- Rough Trev's line of sight on caverns.
-	if drawTrevLOS and GameData.get_current_mission() == 0x17 and _guard_data_reader:get_value("health") == 6000.0 then
-		trevLOS = get_LOS_sectors(_guard_data_reader.current_address)
-		for _, sector in ipairs(trevLOS) do
-			draw_line(sector.cws)
-			draw_line(sector.acws)
-		end
-	end
+	--if drawTrevLOS and GameData.get_current_mission() == 0x17 and _guard_data_reader:get_value("health") == 6000.0 then
+	--	trevLOS = get_LOS_sectors(_guard_data_reader.current_address)
+	--	for _, sector in ipairs(trevLOS) do
+	--		draw_line(sector.cws)
+	--		draw_line(sector.acws)
+	--	end
+	--end
 	
 	
 	local loaded_entity = {}
@@ -1420,15 +1420,15 @@ function draw_guard(_guard_data_reader)
 
 
 	-- Drawing whiskers on Boris
-	if drawBorisWhiskers and body_model == 0x06 then
-		local lbv = {x=400*cosAz, z=-400*sinAz}
-		local whiskers = {
-			x1 = state.position.x - lbv.x, z1 = state.position.z - lbv.z, y1 = clipping_height,
-			x2 = state.position.x + lbv.x, z2 = state.position.z + lbv.z, y2 = clipping_height,
-			color=compColour, alpha=alpha
-		}
-		draw_line(whiskers)
-	end
+	--if drawBorisWhiskers and body_model == 0x06 then
+	--	local lbv = {x=400*cosAz, z=-400*sinAz}
+	--	local whiskers = {
+	--		x1 = state.position.x - lbv.x, z1 = state.position.z - lbv.z, y1 = clipping_height,
+	--		x2 = state.position.x + lbv.x, z2 = state.position.z + lbv.z, y2 = clipping_height,
+	--		color=compColour, alpha=alpha
+	--	}
+	--	draw_line(whiskers)
+	--end
 
 end
 
