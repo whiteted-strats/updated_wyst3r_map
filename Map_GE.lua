@@ -92,7 +92,7 @@ constants.shockwave_to_damage_interval_ratio = 0.25
 constants.shockwave_intensity = 0.3
 constants.max_fadeout_intensity = 0.8
 
-function make_color(_r, _g, _b, _a)
+local function make_color(_r, _g, _b, _a)
 	local a_hex = bit.band(math.floor((_a * 255) + 0.5), 0xFF)
 	local r_hex = bit.band(math.floor((_r * 255) + 0.5), 0xFF)
 	local g_hex = bit.band(math.floor((_g * 255) + 0.5), 0xFF)
@@ -106,19 +106,19 @@ function make_color(_r, _g, _b, _a)
 	return (a_hex + r_hex + g_hex + b_hex)
 end
 
-function make_rgb(_r, _g, _b)
+local function make_rgb(_r, _g, _b)
 	return make_color(_r, _g, _b, 0.0)
 end
 
-function make_alpha(_a)
+local function make_alpha(_a)
 	return make_color(0.0, 0.0, 0.0, _a)
 end
 
-function make_inactive_alpha(_a)
+local function make_inactive_alpha(_a)
 	return make_alpha(constants.inactive_alpha_factor * _a)
 end
 
-function make_alpha_pair(_a)
+local function make_alpha_pair(_a)
 	return {["active"] = make_alpha(_a), ["inactive"] = make_inactive_alpha(_a)}
 end
 
@@ -179,11 +179,11 @@ colors.projectile_proximity_mine_color = make_rgb(0.4, 1.0, 0.4)
 colors.projectile_timed_mine_color = make_rgb(1.0, 1.0, 0.4)
 
 
-function parse_scale()	
+local function parse_scale()	
 	return io.read("*n", "*l")
 end
 
-function parse_bounds(_scale)	
+local function parse_bounds(_scale)	
 	local min_x, min_z, max_x, max_z = io.read("*n", "*n", "*n", "*n", "*l")	
 	
 	local bounds = {}
@@ -196,7 +196,7 @@ function parse_bounds(_scale)
 	return bounds
 end
 
-function parse_floors(_scale)
+local function parse_floors(_scale)
 	local floors = {}
 	local start_index = io.read("*n")
 	
@@ -214,7 +214,7 @@ function parse_floors(_scale)
 	return floors
 end
 
-function parse_edges(_scale)
+local function parse_edges(_scale)
 	local edges = {}
 
 	while true do	
@@ -239,7 +239,7 @@ function parse_edges(_scale)
 	return edges
 end
 
-function parse_map_file(_filename)
+local function parse_map_file(_filename)
 	local file = io.open(_filename, "r")
 	
 	if not file then
@@ -275,7 +275,14 @@ function parse_map_file(_filename)
 	return map
 end
 
-function init_quadtree(_bounds, _edges)
+local function append_quadtree(_quadtree, _edges, _object)
+	for index, edge in ipairs(_edges) do
+		edge["object"] = _object
+		_quadtree:insert(edge)
+	end
+end
+
+local function init_quadtree(_bounds, _edges)
 	local quadtree = QuadTree.create(_bounds.min_x, _bounds.min_z, _bounds.width, _bounds.height, 1)
 	
 	if _edges then
@@ -285,16 +292,9 @@ function init_quadtree(_bounds, _edges)
 	return quadtree
 end
 
-function append_quadtree(_quadtree, _edges, _object)
-	for index, edge in ipairs(_edges) do
-		edge["object"] = _object
-		_quadtree:insert(edge)
-	end
-end
-
 local level_data = {}
 
-function init_level_data()
+local function init_level_data()
 	for mission_index, mission_name in pairs(GameData.mission_index_to_name) do
 		local data = parse_map_file("Maps/GE/" .. mission_name .. ".map")
 		
@@ -308,7 +308,7 @@ end
 
 local level = {}
 
-function load_level(_name)
+local function load_level(_name)
 	level = level_data[_name]
 	
 	level.bounds.width = (level.bounds.max_x - level.bounds.min_x)
@@ -317,14 +317,14 @@ function load_level(_name)
 	level.quadtree = init_quadtree(level.bounds, level.edges)
 end
 
-function get_distance_2d(_x1, _y1, _x2, _y2)
+local function get_distance_2d(_x1, _y1, _x2, _y2)
 	local diff_x = (_x1 - _x2)
 	local diff_y = (_y1 - _y2)
 	
 	return math.sqrt((diff_x * diff_x) + (diff_y * diff_y))
 end
 
-function get_distance_3d(_p1, _p2)
+local function get_distance_3d(_p1, _p2)
 	local diff_x = (_p1.x - _p2.x)
 	local diff_y = (_p1.y - _p2.y)
 	local diff_z = (_p1.z - _p2.z)
@@ -334,7 +334,7 @@ end
 
 local objects = {}
 
-function get_object_edges(_object_data_reader)
+local function get_object_edges(_object_data_reader)
 	local edges = {}	
 	local points, min_y, max_y = _object_data_reader:get_collision_data()
 	
@@ -358,7 +358,7 @@ function get_object_edges(_object_data_reader)
 	return edges
 end
 
-function load_static_object(_object_data_reader)	
+local function load_static_object(_object_data_reader)	
 	local static_object = {}
 	
 	static_object.edges = get_object_edges(_object_data_reader)
@@ -369,7 +369,7 @@ function load_static_object(_object_data_reader)
 	table.insert(objects.static, static_object)
 end
 
-function load_dynamic_object(_object_data_reader)
+local function load_dynamic_object(_object_data_reader)
 	local dynamic_object = {}
 	
 	local position = _object_data_reader:get_value("position")	
@@ -389,7 +389,7 @@ function load_dynamic_object(_object_data_reader)
 	table.insert(objects.dynamic, dynamic_object)
 end
 
-function load_object(_object_data_reader)
+local function load_object(_object_data_reader)
 	local is_door = (_object_data_reader.current_data.type == 0x01)
 	local is_vehicle = (_object_data_reader.current_data.type == 0x27)
 	local is_tank = (_object_data_reader.current_data.type == 0x2D)
@@ -410,7 +410,7 @@ function load_object(_object_data_reader)
 	end
 end
 
-function load_objects()	
+local function load_objects()	
 	objects.static = {}
 	objects.dynamic = {}	
 	objects.quadtree = init_quadtree(level.bounds)
@@ -422,15 +422,15 @@ function load_objects()
 	end)
 end
 
-function units_to_pixels(_units)
+local function units_to_pixels(_units)
 	return ((_units * camera.zoom) / map.units_per_pixel)
 end
 
-function pixels_to_units(_pixels)
+local function pixels_to_units(_pixels)
 	return ((_pixels * map.units_per_pixel) / camera.zoom)
 end
 
-function level_to_screen(_x, _z)
+local function level_to_screen(_x, _z)
 	local diff_x = units_to_pixels(_x - camera.position.x)
 	local diff_z = units_to_pixels(_z - camera.position.z)
 	
@@ -440,7 +440,7 @@ function level_to_screen(_x, _z)
 	return screen_x, screen_y
 end
 
-function screen_to_level(_x, _y)	
+local function screen_to_level(_x, _y)	
 	local diff_x = (_x - map.center_x)
 	local diff_y = (_y - map.center_y)
 	
@@ -450,7 +450,7 @@ function screen_to_level(_x, _y)
 	return level_x, level_z
 end
 
-function get_floor(_height)
+local function get_floor(_height)
 	for i = 2, #level.floors, 1 do
 		if (_height < (level.floors[i].height)) then
 			return (i - 1)
@@ -467,7 +467,7 @@ default_camera.position = {["x"] = camera.position.x, ["z"] = camera.position.z}
 default_camera.floor = camera.floor
 default_camera.zoom = camera.zoom
 
-function reset_camera()
+local function reset_camera()
 	camera.mode = default_camera.mode
 	camera.position = default_camera.position
 	camera.floor = default_camera.floor
@@ -479,16 +479,16 @@ local default_target = {}
 default_target.type = target.type
 default_target.id = target.id
 
-function reset_target()
+local function reset_target()
 	target.type = default_target.type
 	target.id = default_target.id
 end
 
-function reset_guards()
+local function reset_guards()
 	guard_states = {}
 end
 
-function update_mission()
+local function update_mission()
 	local current_mission = GameData.get_current_mission()
 	
 	if (current_mission ~= mission.index) then
@@ -504,7 +504,7 @@ function update_mission()
 	end
 end
 
-function pick_target(_x, _y)
+local function pick_target(_x, _y)
 	local target_to_position_map = {}	
 
 	target_to_position_map[{["type"] = "Player"}] = PlayerData.get_value("position")
@@ -537,17 +537,17 @@ end
 
 local mouse_start_frame = nil
 
-function on_mouse_button_down(_x, _y)
+local function on_mouse_button_down(_x, _y)
 	mouse_start_frame = emu.framecount()
 end
 
-function on_mouse_button_up(_x, _y)
+local function on_mouse_button_up(_x, _y)
 	if ((emu.framecount() - mouse_start_frame) <= constants.max_picking_frames) then
 		target = pick_target(_x, _y)
 	end
 end
 
-function on_mouse_drag(_diff_x, _diff_y)
+local function on_mouse_drag(_diff_x, _diff_y)
 	if (camera.mode == 2) then
 		target = {}
 	end
@@ -563,7 +563,7 @@ end
 
 local previous_mouse =  nil
 
-function update_mouse()
+local function update_mouse()
 	current_mouse = input.getmouse()
 	
 	if previous_mouse and previous_mouse.Left then	
@@ -591,11 +591,11 @@ function update_mouse()
 	previous_mouse = current_mouse
 end
 
-function on_switch_mode()
+local function on_switch_mode()
 	camera.mode = (math.mod(camera.mode, #camera.modes) + 1)
 end
 
-function on_switch_floor()
+local function on_switch_floor()
 	if ((camera.mode == 2) and (#level.floors > 1)) then
 		target = {}
 	end
@@ -603,15 +603,15 @@ function on_switch_floor()
 	camera.floor = (math.mod(camera.floor, #level.floors) + 1)
 end
 
-function on_zoom_in()
+local function on_zoom_in()
 	camera.zoom = math.min((camera.zoom + camera.zoom_step), camera.zoom_max)
 end
 
-function on_zoom_out()
+local function on_zoom_out()
 	camera.zoom = math.max((camera.zoom - camera.zoom_step), camera.zoom_min)
 end
 
-function on_keyboard_button_down(key)
+local function on_keyboard_button_down(key)
 	if (key == camera.switch_mode_key) then
 		on_switch_mode()
 	elseif (key == camera.switch_floor_key) then
@@ -623,12 +623,12 @@ function on_keyboard_button_down(key)
 	end
 end
 
-function on_keyboard_button_up(key)
+local function on_keyboard_button_up(key)
 end
 
 local previous_keyboard = nil
 
-function update_keyboard()
+local function update_keyboard()
 	local current_keyboard = input.get()
 	
 	if previous_keyboard then
@@ -648,7 +648,7 @@ function update_keyboard()
 	previous_keyboard = current_keyboard
 end
 
-function update_target()
+local function update_target()
 	local body_to_name = 
 	{
 		[0x06] = "Boris",
@@ -685,7 +685,7 @@ function update_target()
 	end
 end
 
-function update_camera()
+local function update_camera()
 	if (camera.mode == 2) then
 		if target.position and target.height then
 			camera.position = target.position	
@@ -694,7 +694,7 @@ function update_camera()
 	end
 end
 
-function update_static_objects()
+local function update_static_objects()
 	local count = #objects.static
 
 	for i = count, 1, -1 do
@@ -725,7 +725,7 @@ function update_static_objects()
 	end
 end
 
-function update_dynamic_objects()
+local function update_dynamic_objects()
 	for i = #objects.dynamic, 1, -1 do
 		local dynamic_object = objects.dynamic[i]
 		
@@ -743,17 +743,18 @@ function update_dynamic_objects()
 	end
 end
 
-function update_objects()
+local function update_objects()
 	update_static_objects()
 	update_dynamic_objects()
 end
 
 local guard_states = {}
 
-function update_guard(_guard_data_reader)
+local function update_guard(_guard_data_reader)
 	local current_state = {}
 		
-	current_state.action = _guard_data_reader:get_value("current_action")	
+	current_state.action = _guard_data_reader:get_value("current_action")
+	current_state.flags = _guard_data_reader:get_value("flags")
 	current_state.position = _guard_data_reader:get_position()
 	current_state.local_target_position = nil
 
@@ -813,12 +814,12 @@ function update_guard(_guard_data_reader)
 	guard_states[id] = current_state 
 end
 
-function update_guards()
+local function update_guards()
 	GuardDataReader.for_each(update_guard)
 end
 
 -- Liang-Barsky algorithm.. to a rectangle
-function clip_line(_line, _bounds)
+local function clip_line(_line, _bounds)
 	local diff_x = (_line.x2 - _line.x1)
 	local diff_y = (_line.y2 - _line.y1)
 	
@@ -860,13 +861,13 @@ function clip_line(_line, _bounds)
 	return clipped_line
 end
 
-function get_current_alpha(_alpha, _is_active)
+local function get_current_alpha(_alpha, _is_active)
 	local alpha = (_alpha or colors.default_alpha)
 	
 	return (_is_active and alpha.active or alpha.inactive)
 end
 
-function draw_line(_line)
+local function draw_line(_line)
 	local line = {}
 
 	line.x1, line.y1 = level_to_screen(_line.x1, _line.z1)
@@ -896,7 +897,7 @@ function draw_line(_line)
 	gui.drawLine(line.x1, line.y1, line.x2, line.y2, color)	
 end
 
-function draw_circle(_circle)
+local function draw_circle(_circle)
 	local screen_x, screen_y = level_to_screen(_circle.x, _circle.z)
 	local screen_radius = units_to_pixels(_circle.radius)
 	local screen_diameter = (screen_radius * 2)
@@ -925,7 +926,7 @@ function draw_circle(_circle)
 end
 
 -- A sector
-function draw_cone(_cone)
+local function draw_cone(_cone)
 	local screen_x, screen_y = level_to_screen(_cone.x, _cone.z)
 	local screen_radius = units_to_pixels(_cone.radius)
 	local screen_diameter = (screen_radius * 2)
@@ -952,7 +953,7 @@ function draw_cone(_cone)
 	gui.drawPie(pie.x, pie.y, pie.width, pie.height, pie.start_angle, pie.sweep_angle, color, color)		
 end
 
-function draw_rectangle(_rectangle)
+local function draw_rectangle(_rectangle)
 	local box = {}
 	
 	box.x1, box.y1 = level_to_screen(_rectangle.x1, _rectangle.z1)
@@ -983,7 +984,7 @@ function draw_rectangle(_rectangle)
 	gui.drawBox(box.x1, box.y1, box.x2, box.y2, color, color)
 end
 
-function draw_text(_text)	
+local function draw_text(_text)	
 	local lines = {}
 	
 	local offset_x = _text.border_width
@@ -1030,7 +1031,7 @@ function draw_text(_text)
 	end
 end
 
-function draw_level()
+local function draw_level()
 	local bounds = {}
 	local collisions = {}
 	
@@ -1044,7 +1045,7 @@ function draw_level()
 	end
 end
 
-function drawGuardCirclesForDoor(object, position)
+local function drawGuardCirclesForDoor(object, position)
 	-- Guards' test is 2m but 3D, whereas ours is 2D
 	if guardHeightForDoors == nil then
 		return
@@ -1070,7 +1071,7 @@ function drawGuardCirclesForDoor(object, position)
 	end
 end
 
-function drawDoorReachability(object)
+local function drawDoorReachabilityAndGuides(object)
 	if (object.data_reader.current_data.type ~= 0x01) then
 		return
 	end
@@ -1115,6 +1116,7 @@ function drawDoorReachability(object)
 	local change = {-expansion, expansion}
 	local pnts = {}
 	local i,j,k,doorX,doorZ
+	local guidePnts = {}
 
 	for i = 1,4,1 do
 		j = js[i]
@@ -1126,9 +1128,17 @@ function drawDoorReachability(object)
 			x = preset_pos.x + norm_x.x*doorX + norm_z.x*doorZ, 
 			z = preset_pos.z + norm_x.z*doorX + norm_z.z*doorZ,
 		})
+
+		-- Guide points the same but don't expand the xs
+		table.insert(guidePnts, {
+			x = preset_pos.x + norm_x.x*x_limits[j] + norm_z.x*doorZ, 
+			z = preset_pos.z + norm_x.z*x_limits[j] + norm_z.z*doorZ,
+		})
+
 	end
 
 	-- Draw each of the edges to form this expanded rectangle
+	-- And also draw the guide lines
 	for i = 1,4,1 do
 		j = (i % 4) + 1
 		local line = {
@@ -1140,9 +1150,18 @@ function drawDoorReachability(object)
 			-- If specifying alpha, needs to have 'active' and 'inactive' values
 		}
 		draw_line(line)
+
+		line = {
+			x1 = guidePnts[i].x, z1 = guidePnts[i].z,
+			y1 = preset_pos.y,
+			x2 = guidePnts[j].x, z2 = guidePnts[j].z,
+			y2 = preset_pos.y,
+			color=make_rgb(1, 0.5, 0),
+		}
+		draw_line(line)
 	end
 
-	-- And then draw the circle also, but around the object's position
+	-- And then draw the circle also, but around the object's position (coincides I suspect)
 	local door_pos = object.data_reader:get_value("position")
 	draw_circle({
 		x=door_pos.x,
@@ -1153,9 +1172,12 @@ function drawDoorReachability(object)
 		force=true,
 	})
 
+
+
+
 end
 
-function drawActivatableRange(object)
+local function drawActivatableRange(object)
 	-- Radius 2m, or 4m for an aircraft.
 	-- Our angle must also be within 22.5 degrees, or 120 for the aircraft
 	local radius = 200
@@ -1178,7 +1200,7 @@ end
 -- ! Activatable objects are only obtained once, otherwise we'll have to repeatedly reparse scripts
 local activatableObjects = ScriptData.getActivatableObjects()
 
-function draw_static_objects(_bounds)
+local function draw_static_objects(_bounds)
 	local count = 0
 	local collisions = {}
 
@@ -1206,11 +1228,11 @@ function draw_static_objects(_bounds)
 	for _, object in pairs(onscreenObjs) do
 		local position = object.data_reader:get_value("position")
 		drawGuardCirclesForDoor(object, position)
-		drawDoorReachability(object)
+		drawDoorReachabilityAndGuides(object)
 	end
 end
 
-function draw_dynamic_objects(_bounds)
+local function draw_dynamic_objects(_bounds)
 	for index, object in ipairs(objects.dynamic) do
 		local position = object.data_reader:get_value("position")
 		
@@ -1220,6 +1242,7 @@ function draw_dynamic_objects(_bounds)
 			((position.z - object.bounding_radius) < _bounds.z2)) then
 
 			drawGuardCirclesForDoor(object, position)
+			drawDoorReachabilityAndGuides(object)
 
 			local edges = get_object_edges(object.data_reader)
 			
@@ -1230,7 +1253,7 @@ function draw_dynamic_objects(_bounds)
 	end
 end
 
-function draw_objects()
+local function draw_objects()
 	local bounds = {}
 	
 	bounds.x1, bounds.z1 = screen_to_level(map.min_x, map.min_y)
@@ -1240,7 +1263,7 @@ function draw_objects()
 	draw_dynamic_objects(bounds)
 end
 
-function draw_entity(_entity)
+local function draw_entity(_entity)
 	local entity_circle = {}
 	
 	entity_circle.x = _entity.x
@@ -1266,7 +1289,7 @@ function draw_entity(_entity)
 	end
 end
 
-function draw_guard(_guard_data_reader)
+local function draw_guard(_guard_data_reader)
 	-- Work even if guards are off screen
 
 	-- Constants should probably be globals
@@ -1408,8 +1431,8 @@ function draw_guard(_guard_data_reader)
 
 
 	
-	-- Draw the local target if it's set (we're chasing / walking and it's valid)
-	if state.local_target_position ~= nil then
+	-- Draw the local target if it's set and won't be overwritten (we're chasing / walking and it's valid)
+	if state.local_target_position ~= nil and (state.action == 0xE or state.action == 0xF) then	-- walking path or chasing bond
 		local edge = {
 			x1 = state.position.x, z1 = state.position.z, y1 = clipping_height,
 			x2 = state.local_target_position.x, z2 = state.local_target_position.z, y2 = clipping_height,
@@ -1417,6 +1440,27 @@ function draw_guard(_guard_data_reader)
 		}
 		draw_line(edge)
 	end
+
+	-- If we're the selected guard, also draw noise info
+	-- Radius is 3D so we get the XZ slice of this sphere
+	local yDiff = PlayerData.get_value("position").y - state.position.y
+	local radius = PlayerData.getNoise() * 100
+	radius = math.sqrt(radius*radius - yDiff*yDiff)
+	local colour = 0xFFFFFF00
+	if bit.band(state.flags, 2) ~= 0 then
+		colour = 0xFFFF0000
+	end
+
+	if loaded_entity.is_target then
+		draw_circle({
+			x=state.position.x,
+			y=state.position.y,
+			z=state.position.z,
+			radius = radius,
+			outer_color = colour,
+		})
+	end
+
 
 
 	-- Drawing whiskers on Boris
@@ -1432,11 +1476,11 @@ function draw_guard(_guard_data_reader)
 
 end
 
-function draw_guards()
+local function draw_guards()
 	GuardDataReader.for_each(draw_guard)
 end
 
-function draw_bond()
+local function draw_bond()
 	local outfit_to_color =
 	{
 		[0x00] = colors.bond_dress_suit_color,
@@ -1509,7 +1553,7 @@ function draw_bond()
 end
 
 -- TODO: Draw all weapons, not just projectiles?
-function draw_projectile(_projectile_data_reader)
+local function draw_projectile(_projectile_data_reader)
 	local image_to_color = 
 	{
 		[0x0BA] = colors.projectile_default_color, 			-- Knife
@@ -1529,7 +1573,7 @@ function draw_projectile(_projectile_data_reader)
 	local color = image_to_color[image]
 	
 	if not color then
-		return
+		return --color = colors.projectile_default_color
 	end
 	
 	local entity = {}
@@ -1544,11 +1588,39 @@ function draw_projectile(_projectile_data_reader)
 	draw_entity(entity)
 end
 
-function draw_projectiles()
+local function draw_projectiles()
 	ProjectileDataReader.for_each(draw_projectile)
 end
 
-function draw_explosion(_explosion_data_reader)	
+local function draw_collectibles()
+	local collectibleColours = {
+		-- Taken from the wiki
+		[0x4] = make_rgb(1,0.45,0),	-- key
+        [0x15] = make_rgb(0,0.1,0.3), -- body_armour
+	}
+
+	local collectibles = ObjectData.getAllCollectables()
+	for objPtr, _ in pairs(collectibles) do	-- _ = true currently
+		-- We got these objects from positionDatas, so should all extend PhysicalObjectData
+		local posDataPtr = PhysicalObjectData:get_value(objPtr, "position_data_pointer") - 0x80000000
+		local pos = PositionData:get_value(posDataPtr, "position")
+		
+		-- Use the type to decide a colour
+		local type = ObjectData.get_type(objPtr)
+		local colour = collectibleColours[type] or 0xFF000000
+
+		-- 1m circle in XZ (+-2m in Y)
+		draw_circle({
+			x=pos.x,
+			y=pos.y,
+			z=pos.z,
+			radius = 100,
+			outer_color = colour,
+		})
+	end
+end
+
+local function draw_explosion(_explosion_data_reader)	
 	local position = _explosion_data_reader:get_position()
 	
 	local animation_frame = _explosion_data_reader:get_value("animation_frame")
@@ -1603,11 +1675,11 @@ function draw_explosion(_explosion_data_reader)
 	draw_rectangle(rectangle)
 end
 
-function draw_explosions()
+local function draw_explosions()
 	ExplosionDataReader.for_each(draw_explosion)
 end
 
-function draw_output()
+local function draw_output()
 	local fragments = {}
 	
 	table.insert(fragments, string.format("Mode: %s", camera.modes[camera.mode]))
@@ -1642,12 +1714,12 @@ function draw_output()
 	draw_text(text)
 end
 
-function is_mission_running()
+local function is_mission_running()
 	return ((GameData.get_mission_state() ~= 0) and 
 			(GameData.get_global_timer() ~= 0))
 end
 
-function on_load_state()
+local function on_load_state()
 	if not is_mission_running() then
 		return
 	end	
@@ -1656,7 +1728,7 @@ function on_load_state()
 	reset_guards()
 end
 
-function on_update()
+local function on_update()
 	if not is_mission_running() then
 		return
 	end
@@ -1674,6 +1746,7 @@ function on_update()
 	draw_guards()
 	draw_bond()
 	draw_projectiles()
+	draw_collectibles()
 	draw_explosions()
 	draw_output()
 end
