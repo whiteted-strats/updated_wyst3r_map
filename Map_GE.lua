@@ -70,9 +70,9 @@ mission.name = nil
 
 local target = {}
 
-target.type = "Player" -- "Guard" -- 
-target.name = "Bond"
-target.id = 0x20 -- nil
+target.type = "Player" --"Guard" -- 
+target.name = "Bond" --"Lured guard" --
+target.id = 0x15
 target.position = nil
 target.height = nil
 
@@ -776,11 +776,16 @@ local function update_guard(_guard_data_reader)
 	
 	current_state.is_moving = ((current_state.action == 0x0E) or (current_state.action == 0x0F))
 	current_state.is_fading = (current_state.action == 0x05)
+
+	-- Pretty sure this can be replaced by testing motion_stage != 0x06
+	-- Testing with _is_unloaded
 	current_state.is_loaded = true
 	
 	local id = _guard_data_reader:get_value("id")
 	
 	if current_state.is_moving then
+		current_state._is_unloaded = (_guard_data_reader:get_value("motion_stage") == 0x06)
+
 		local previous_state = guard_states[id]
 		
 		if previous_state and previous_state.is_moving then	
@@ -809,6 +814,9 @@ local function update_guard(_guard_data_reader)
 				current_state.is_loaded = not previous_state.is_loaded
 			end
 		end
+
+	else
+		current_state._is_unloaded = false
 	end
 	
 	guard_states[id] = current_state 
@@ -1138,7 +1146,9 @@ local function drawDoorReachabilityAndGuides(object)
 	end
 
 	-- Draw each of the edges to form this expanded rectangle
-	-- And also draw the guide lines
+	-- And also draw the guide lines.. but not for locked doors as they interfere with our view
+	local playerCanOpenNow = PlayerData.hasKeyForLocks(object.data_reader:get_value("lock"))
+
 	for i = 1,4,1 do
 		j = (i % 4) + 1
 		local line = {
@@ -1151,14 +1161,16 @@ local function drawDoorReachabilityAndGuides(object)
 		}
 		draw_line(line)
 
-		line = {
-			x1 = guidePnts[i].x, z1 = guidePnts[i].z,
-			y1 = preset_pos.y,
-			x2 = guidePnts[j].x, z2 = guidePnts[j].z,
-			y2 = preset_pos.y,
-			color=make_rgb(1, 0.5, 0),
-		}
-		draw_line(line)
+		if playerCanOpenNow then
+			line = {
+				x1 = guidePnts[i].x, z1 = guidePnts[i].z,
+				y1 = preset_pos.y,
+				x2 = guidePnts[j].x, z2 = guidePnts[j].z,
+				y2 = preset_pos.y,
+				color=make_rgb(1, 0.5, 0),
+			}
+			draw_line(line)
+		end
 	end
 
 	-- And then draw the circle also, but around the object's position (coincides I suspect)
@@ -1441,17 +1453,19 @@ local function draw_guard(_guard_data_reader)
 		draw_line(edge)
 	end
 
-	-- If we're the selected guard, also draw noise info
-	-- Radius is 3D so we get the XZ slice of this sphere
-	local yDiff = PlayerData.get_value("position").y - state.position.y
-	local radius = PlayerData.getNoise() * 100
-	radius = math.sqrt(radius*radius - yDiff*yDiff)
-	local colour = 0xFFFFFF00
-	if bit.band(state.flags, 2) ~= 0 then
-		colour = 0xFFFF0000
-	end
+	-- If we're the selected guard..
 
 	if loaded_entity.is_target then
+		-- Also draw NOISE INFO
+		-- Radius is 3D so we get the XZ slice of this sphere
+		local yDiff = PlayerData.get_value("position").y - state.position.y
+		local radius = PlayerData.getNoise() * 100
+		radius = math.sqrt(radius*radius - yDiff*yDiff)
+		local colour = 0xFFFFFF00
+		if bit.band(state.flags, 2) ~= 0 then	-- set when they hear us
+			colour = 0xFFFF0000
+		end
+
 		draw_circle({
 			x=state.position.x,
 			y=state.position.y,
@@ -1459,8 +1473,89 @@ local function draw_guard(_guard_data_reader)
 			radius = radius,
 			outer_color = colour,
 		})
+
+		-- If we're moving and loaded, draw chase data :)
+		-- i.e the two extremes of the barrier and the potential dodge points
+		if state.is_moving and not state._is_unloaded then
+			local rightBarrierPos = _guard_data_reader:get_value("barrier_right_pos")
+			local leftBarrierPos = _guard_data_reader:get_value("barrier_left_pos")
+			local barrierColour = 0xFF6060FF	-- Blue and a little grey
+			local dodgeColour = 0xFFFFFF60		-- Yellow and a little grey
+			local chaseOuterColours = {0xFFFFFFFF, 0xFF000000}
+
+			-- Barrier (extremes joined directly rather than through the rest of the structure)
+			draw_line({
+				x1 = rightBarrierPos.x, y1 = rightBarrierPos.y, z1 = rightBarrierPos.z,
+				x2 = leftBarrierPos.x, y2 = leftBarrierPos.y, z2 = leftBarrierPos.z,
+				color = barrierColour,
+			})
+
+			-- Get the dodge points
+			local dodgePnts = GuardData.get_dodge_points(_guard_data_reader.current_address)
+
+			-- Draw points at the extremes of the barrier and at the dodge points,
+			-- Linking them
+			for i, barrierPnt in ipairs({rightBarrierPos, leftBarrierPos}) do
+				draw_circle({
+					x = barrierPnt.x,
+					y = barrierPnt.y,
+					z = barrierPnt.z,
+					radius = 4,
+					inner_color = barrierColour,
+					outer_color = chaseOuterColours[i],
+				})
+
+				local dodgePnt = dodgePnts[i]
+				draw_line({
+					x1 = barrierPnt.x, y1 = barrierPnt.y, z1 = barrierPnt.z, 
+					x2 = dodgePnt.x, y2 = dodgePnt.y, z2 = dodgePnt.z,
+					color = dodgeColour,
+				})
+
+				draw_circle({
+					x = dodgePnt.x,
+					y = dodgePnt.y,
+					z = dodgePnt.z,
+					radius = 4,
+					inner_color = dodgeColour,
+					outer_color = chaseOuterColours[i],
+				})
+			end
+
+			-- Draw the guard's current target from their path prefix thing
+			local psOffset = _guard_data_reader:get_value("path_stack_index")
+			psOffset = 0x40 + 0x4*psOffset
+			local padPtr = mainmemory.read_u32_be(_guard_data_reader.current_address + psOffset)
+			local nextPathTarget
+			if padPtr == 0 then
+				nextPathTarget = _guard_data_reader:get_value("bond_position")
+			else
+				padPtr = padPtr - 0x80000000
+				nextPathTarget = PadData.padPosFromNum(PadData:get_value(padPtr, "number"))
+			end
+
+			draw_circle({
+				x = nextPathTarget.x,
+				y = nextPathTarget.y,
+				z = nextPathTarget.z,
+				radius = 4,
+				inner_color = 0xFFFF0000,
+				outer_color = 0xFFFF0000,
+			})
+
+		end
 	end
 
+	-- Draw meetup circle around Doak
+	if id == 0x4F and GameData.get_current_mission() == 0x02 then
+		draw_circle({
+			x=state.position.x,
+			y=state.position.y,
+			z=state.position.z,
+			radius = 100,
+			outer_color = 0xFF000000,
+		})
+	end
 
 
 	-- Drawing whiskers on Boris
