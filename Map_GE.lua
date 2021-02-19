@@ -70,9 +70,9 @@ mission.name = nil
 
 local target = {}
 
-target.type = "Player" --"Guard" -- 
-target.name = "Nade guard" --"Bond" --
-target.id = 0x11
+target.type = "Guard" -- "Player" --
+target.name = "Some guard" --"Bond" --
+target.id = 0x0C
 target.position = nil
 target.height = nil
 
@@ -965,7 +965,7 @@ local function draw_circle(_circle)
 end
 
 -- A sector
-local function draw_cone(_cone, cull)
+local function draw_cone(_cone, cull, adjustAngles, asTriangle)
 	local screen_x, screen_y = level_to_screen(_cone.x, _cone.z)
 	local screen_radius = units_to_pixels(_cone.radius)
 	local screen_diameter = (screen_radius * 2)
@@ -978,6 +978,13 @@ local function draw_cone(_cone, cull)
 	pie.height = screen_diameter
 	pie.start_angle = _cone.start_angle
 	pie.sweep_angle = _cone.sweep_angle
+
+	if adjustAngles then
+		-- acws angle with 0 = +z coming in
+		-- convert to cws with 0 = +x?
+		-- note that end becomes the start, since sweep stays positive
+		pie.start_angle = (720 -(pie.start_angle + pie.sweep_angle) + 90) % 360
+	end
 	
 	if cull and ((pie.x < map.min_x) or
 		(pie.y < map.min_y) or
@@ -989,7 +996,30 @@ local function draw_cone(_cone, cull)
 	local is_active = (get_floor(_cone.y) == camera.floor)
 	local color = (_cone.color + get_current_alpha(_cone.alpha, is_active))
 
-	gui.drawPie(pie.x, pie.y, pie.width, pie.height, pie.start_angle, pie.sweep_angle, color, color)		
+	if not asTriangle then
+		gui.drawPie(pie.x, pie.y, pie.width, pie.height, pie.start_angle, pie.sweep_angle, color, color)
+	else
+		-- drawPie is pretty bad so often it'll be better to draw triangles
+		pie.end_angle = (pie.start_angle + pie.sweep_angle) % 360
+		local pnts = {
+			{screen_x, screen_y},
+		}
+		local angles = {pie.start_angle, pie.end_angle,}
+		for _, angle in ipairs(angles) do
+			angle = angle * (math.pi / 180)
+			table.insert(pnts, {
+				screen_x + screen_radius * math.cos(angle),
+				screen_y + screen_radius * math.sin(angle),
+			})
+		end
+
+		-- gui.drawPolygon really sucks, you don't seem to be able to set colours
+		for i=1,3,1 do
+			local j = (i+1) % 3
+			gui.drawLine(pnts[i][0], pnts[i][1], pnts[j][0], pnts[j][1], 0x80C0C0C0)
+
+		end
+	end
 end
 
 local function draw_rectangle(_rectangle)
@@ -1633,7 +1663,7 @@ local function draw_guard(_guard_data_reader)
 				draw_line_points(shootingData.gunPos, PlayerData.get_position(), 0xFF000000)
 
 				for _, cone in ipairs(shootingData.cones) do
-					draw_cone(cone, false)
+					draw_cone(cone, false, true, true)
 				end
 			end
 
