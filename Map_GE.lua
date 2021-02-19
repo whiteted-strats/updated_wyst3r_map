@@ -71,8 +71,8 @@ mission.name = nil
 local target = {}
 
 target.type = "Player" --"Guard" -- 
-target.name = "Bond" --"Lured guard" --
-target.id = 0x15
+target.name = "Nade guard" --"Bond" --
+target.id = 0x11
 target.position = nil
 target.height = nil
 
@@ -309,12 +309,19 @@ end
 local level = {}
 
 local function load_level(_name)
+
 	level = level_data[_name]
 	
 	level.bounds.width = (level.bounds.max_x - level.bounds.min_x)
 	level.bounds.height = (level.bounds.max_z - level.bounds.min_z)
 	
 	level.quadtree = init_quadtree(level.bounds, level.edges)
+
+	-- Also load anything level_specific - it seems they'll be ready
+	level.specific = {}
+	if _name == "Facility" then
+		level.specific["DD_lure_tile_point"] = TileData.get_points(TileData.getTileWithName(0x0FE421))[2]
+	end
 end
 
 local function get_distance_2d(_x1, _y1, _x2, _y2)
@@ -755,8 +762,9 @@ local function update_guard(_guard_data_reader)
 		
 	current_state.action = _guard_data_reader:get_value("current_action")
 	current_state.flags = _guard_data_reader:get_value("flags")
-	current_state.position = _guard_data_reader:get_position()
+	current_state.position = _guard_data_reader:get_position()	-- from PositionData
 	current_state.local_target_position = nil
+	current_state.CR = _guard_data_reader:get_value("collision_radius")
 
 	if (current_state.action == 0x0E) then
 		current_state.target_position = _guard_data_reader:get_value("path_target_position")
@@ -776,6 +784,7 @@ local function update_guard(_guard_data_reader)
 	
 	current_state.is_moving = ((current_state.action == 0x0E) or (current_state.action == 0x0F))
 	current_state.is_fading = (current_state.action == 0x05)
+	current_state.is_shooting = ((current_state.action >= 0x8) and (current_state.action <= 0xA))
 
 	-- Pretty sure this can be replaced by testing motion_stage != 0x06
 	-- Testing with _is_unloaded
@@ -784,7 +793,8 @@ local function update_guard(_guard_data_reader)
 	local id = _guard_data_reader:get_value("id")
 	
 	if current_state.is_moving then
-		current_state._is_unloaded = (_guard_data_reader:get_value("motion_stage") == 0x06)
+		current_state.motion_stage = _guard_data_reader:get_value("motion_stage")
+		current_state._is_unloaded = (current_state.motion_stage == 0x06)
 
 		local previous_state = guard_states[id]
 		
@@ -816,6 +826,7 @@ local function update_guard(_guard_data_reader)
 		end
 
 	else
+		current_state.motion_stage = -1
 		current_state._is_unloaded = false
 	end
 	
@@ -902,7 +913,27 @@ local function draw_line(_line)
 					   (get_floor(max_height) >= camera.floor))						   
 	local color = (_line.color + get_current_alpha(_line.alpha, is_active))
 
-	gui.drawLine(line.x1, line.y1, line.x2, line.y2, color)	
+	function func()
+		gui.drawLine(line.x1, line.y1, line.x2, line.y2, color)
+	end
+
+	if pcall(func) then
+	else
+		console.log("\nBad line:")
+		console.log(line)
+		console.log("from _line:")
+		console.log(_line)
+		print(debug.traceback())
+	end
+end
+
+local function draw_line_points(p1, p2, colour, default_y)
+	-- about time I wrote this helper
+	draw_line({
+		x1 = p1.x, y1 = p1.y or default_y, z1 = p1.z,
+		x2 = p2.x, y2 = p2.y or default_y, z2 = p2.z,
+		color = colour
+	})
 end
 
 local function draw_circle(_circle)
@@ -934,7 +965,7 @@ local function draw_circle(_circle)
 end
 
 -- A sector
-local function draw_cone(_cone)
+local function draw_cone(_cone, cull)
 	local screen_x, screen_y = level_to_screen(_cone.x, _cone.z)
 	local screen_radius = units_to_pixels(_cone.radius)
 	local screen_diameter = (screen_radius * 2)
@@ -948,7 +979,7 @@ local function draw_cone(_cone)
 	pie.start_angle = _cone.start_angle
 	pie.sweep_angle = _cone.sweep_angle
 	
-	if ((pie.x < map.min_x) or
+	if cull and ((pie.x < map.min_x) or
 		(pie.y < map.min_y) or
 		((pie.x + pie.width) > map.max_x) or
 		((pie.y + pie.height) > map.max_y)) then	
@@ -1050,6 +1081,17 @@ local function draw_level()
 	
 	for key, edge in pairs(collisions) do
 		draw_line(edge)
+	end
+
+	-- Also draw anything level specific
+	if mission.name == "Facility" then
+		local pnt = level.specific["DD_lure_tile_point"]
+		draw_circle({
+			x = pnt.x, y = pnt.y, z = pnt.z,
+			radius = 2,
+			inner_color = 0xFF30D030,
+			outer_color = 0xFF30D030,
+		})
 	end
 end
 
@@ -1444,13 +1486,18 @@ local function draw_guard(_guard_data_reader)
 
 	
 	-- Draw the local target if it's set and won't be overwritten (we're chasing / walking and it's valid)
+	-- TEMPORARY fix for if the local target is garbage (needs investigating, may be walking path ghost door bug)
 	if state.local_target_position ~= nil and (state.action == 0xE or state.action == 0xF) then	-- walking path or chasing bond
-		local edge = {
-			x1 = state.position.x, z1 = state.position.z, y1 = clipping_height,
-			x2 = state.local_target_position.x, z2 = state.local_target_position.z, y2 = clipping_height,
-			color=0xFFFF00FF, alpha=alpha,
-		}
-		draw_line(edge)
+		local x2 = state.local_target_position.x
+		local z2 = state.local_target_position.z
+		if x2 == x2 and z2 == z2 then
+			local edge = {
+				x1 = state.position.x, z1 = state.position.z, y1 = clipping_height,
+				x2 = x2, z2 = z2, y2 = clipping_height,
+				color=0xFFFF00FF, alpha=alpha,
+			}
+			draw_line(edge)
+		end
 	end
 
 	-- If we're the selected guard..
@@ -1475,21 +1522,78 @@ local function draw_guard(_guard_data_reader)
 		})
 
 		-- If we're moving and loaded, draw chase data :)
-		-- i.e the two extremes of the barrier and the potential dodge points
+		-- i.e
+		--  0. the nextPathTarget 
+		--  1. the 'movement corridor' which should generate the barrier 
+		--	2. the two extremes of the barrier
+		--  3. the potential dodge points
+
+		-- Added 0 as another unloaded motion stage.. need to check with RE because I thought it was only 6.
+		-- and not state.motion_stage == 0
 		if state.is_moving and not state._is_unloaded then
 			local rightBarrierPos = _guard_data_reader:get_value("barrier_right_pos")
 			local leftBarrierPos = _guard_data_reader:get_value("barrier_left_pos")
 			local barrierColour = 0xFF6060FF	-- Blue and a little grey
 			local dodgeColour = 0xFFFFFF60		-- Yellow and a little grey
-			local chaseOuterColours = {0xFFFFFFFF, 0xFF000000}
+			local chaseOuterColours = {0xFF000000, 0xFFFFFFFF} -- Black and white, Right and Left
+			local movementCorridorColour = 0x80C0C0C0	-- Dark gray, 50% alpha
 
-			-- Barrier (extremes joined directly rather than through the rest of the structure)
-			draw_line({
-				x1 = rightBarrierPos.x, y1 = rightBarrierPos.y, z1 = rightBarrierPos.z,
-				x2 = leftBarrierPos.x, y2 = leftBarrierPos.y, z2 = leftBarrierPos.z,
-				color = barrierColour,
+			-- (0)
+			-- Draw the guard's current target from their path prefix thing
+			-- This was inferred but I've since seen it in code
+			local psOffset = _guard_data_reader:get_value("path_stack_index")
+			psOffset = 0x40 + 0x4*psOffset
+			local padPtr = mainmemory.read_u32_be(_guard_data_reader.current_address + psOffset)
+			
+			local nextPathTarget
+			if padPtr == 0 then
+				nextPathTarget = _guard_data_reader:get_value("bond_position")
+			else
+				-- Issue here if we enter while unloaded (stage 6 OR 0?)
+				padPtr = padPtr - 0x80000000
+				nextPathTarget = PadData.padPosFromNum(PadData:get_value(padPtr, "number"))
+			end
+
+			draw_circle({
+				x = nextPathTarget.x,
+				y = nextPathTarget.y,
+				z = nextPathTarget.z,
+				radius = 4,
+				inner_color = 0xFFFF0000,
+				outer_color = 0xFFFF0000,
 			})
 
+
+			-- (1)
+			-- Draw the full movement corridor.
+			-- There are 2 different corridor checking functions but the other is only called when the route is good.
+			-- This one is 7f03081c
+			local m_unit = {x=nextPathTarget.x - state.position.x, z = nextPathTarget.z - state.position.z}
+			local m_length = math.sqrt(m_unit.x*m_unit.x + m_unit.z*m_unit.z)
+			m_unit.x = m_unit.x / m_length
+			m_unit.z = m_unit.z / m_length
+			local nearWidthRight = {x = 0.95 * state.CR * m_unit.z, z = -0.95 * state.CR * m_unit.x}	-- 0.95 multiplier used
+			local farWidthRight = {x = 1.2 * state.CR * m_unit.z, z = -1.2*state.CR * m_unit.x}	-- 1.20 multiplier used
+			local overshoot = {x = -state.CR * m_unit.x, z = -state.CR * m_unit.z}	-- overshoot is set to -CR
+
+			local nearRight = {x = state.position.x + nearWidthRight.x, z = state.position.z + nearWidthRight.z}
+			local nearLeft = {x = state.position.x - nearWidthRight.x, z = state.position.z - nearWidthRight.z}
+			local farRight = {x = nextPathTarget.x + farWidthRight.x + overshoot.x, z = nextPathTarget.z + farWidthRight.z + overshoot.z}
+			local farLeft = {x = nextPathTarget.x - farWidthRight.x + overshoot.x, z = nextPathTarget.z - farWidthRight.z + overshoot.z}
+			
+			-- We can draw the 5 lines as 4
+			-- And we omit the direct one since it's only relevant if the other 2 are clear
+			draw_line_points(nearLeft, nearRight, movementCorridorColour, state.position.y)
+			draw_line_points(nearLeft, farLeft, movementCorridorColour, state.position.y)
+			draw_line_points(nearRight, farRight, movementCorridorColour, state.position.y)
+			--draw_line_points(state.position, nextPathTarget, movementCorridorColour, state.position.y)
+
+
+			-- (2)
+			-- Barrier (extremes joined directly rather than through the rest of the structure)
+			draw_line_points(rightBarrierPos, leftBarrierPos, barrierColour)
+
+			-- (3)
 			-- Get the dodge points
 			local dodgePnts = GuardData.get_dodge_points(_guard_data_reader.current_address)
 
@@ -1506,11 +1610,7 @@ local function draw_guard(_guard_data_reader)
 				})
 
 				local dodgePnt = dodgePnts[i]
-				draw_line({
-					x1 = barrierPnt.x, y1 = barrierPnt.y, z1 = barrierPnt.z, 
-					x2 = dodgePnt.x, y2 = dodgePnt.y, z2 = dodgePnt.z,
-					color = dodgeColour,
-				})
+				draw_line_points(barrierPnt, dodgePnt, dodgeColour)
 
 				draw_circle({
 					x = dodgePnt.x,
@@ -1521,27 +1621,21 @@ local function draw_guard(_guard_data_reader)
 					outer_color = chaseOuterColours[i],
 				})
 			end
+		end
 
-			-- Draw the guard's current target from their path prefix thing
-			local psOffset = _guard_data_reader:get_value("path_stack_index")
-			psOffset = 0x40 + 0x4*psOffset
-			local padPtr = mainmemory.read_u32_be(_guard_data_reader.current_address + psOffset)
-			local nextPathTarget
-			if padPtr == 0 then
-				nextPathTarget = _guard_data_reader:get_value("bond_position")
-			else
-				padPtr = padPtr - 0x80000000
-				nextPathTarget = PadData.padPosFromNum(PadData:get_value(padPtr, "number"))
+		-- Draw shooting info for the selected guard
+		if state.is_shooting then
+			local shootingData = GuardData.get_shooting_data(_guard_data_reader.current_address, 0x80FF0000)
+			if shootingData ~= nil then
+				gui.drawText(15,85, "Guard 'intolerance' = " .. _guard_data_reader:get_value("intolerance"))
+				gui.drawText(15,100,"Guard 'accuracy' = " .. shootingData.intolIncr)
+
+				draw_line_points(shootingData.gunPos, PlayerData.get_position(), 0xFF000000)
+
+				for _, cone in ipairs(shootingData.cones) do
+					draw_cone(cone, false)
+				end
 			end
-
-			draw_circle({
-				x = nextPathTarget.x,
-				y = nextPathTarget.y,
-				z = nextPathTarget.z,
-				radius = 4,
-				inner_color = 0xFFFF0000,
-				outer_color = 0xFFFF0000,
-			})
 
 		end
 	end
@@ -1614,7 +1708,7 @@ local function draw_bond()
 	view_cone.color = colors.view_cone_color
 	view_cone.alpha = colors.view_cone_alpha
 	
-	draw_cone(view_cone)
+	draw_cone(view_cone, false)
 	
 	local view_angle_radians = math.rad(view_angle)
 	local view_angle_cosine = math.cos(view_angle_radians)
@@ -1835,6 +1929,7 @@ local function on_update()
 	update_camera()	
 	update_objects()
 	update_guards()
+
 	
 	draw_level()
 	draw_objects()
