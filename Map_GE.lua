@@ -1002,21 +1002,23 @@ local function draw_cone(_cone, cull, adjustAngles, asTriangle)
 		-- drawPie is pretty bad so often it'll be better to draw triangles
 		pie.end_angle = (pie.start_angle + pie.sweep_angle) % 360
 		local pnts = {
-			{screen_x, screen_y},
+			{x = _cone.x, z = _cone.z},
 		}
 		local angles = {pie.start_angle, pie.end_angle,}
 		for _, angle in ipairs(angles) do
 			angle = angle * (math.pi / 180)
 			table.insert(pnts, {
-				screen_x + screen_radius * math.cos(angle),
-				screen_y + screen_radius * math.sin(angle),
+				x = _cone.x + _cone.radius * math.cos(angle),
+				z = _cone.z + _cone.radius * math.sin(angle),
 			})
 		end
 
 		-- gui.drawPolygon really sucks, you don't seem to be able to set colours
+		--  .. but we're having the same problem with drawLine..
+		-- so just using Henrik's draw_line now
 		for i=1,3,1 do
-			local j = (i+1) % 3
-			gui.drawLine(pnts[i][0], pnts[i][1], pnts[j][0], pnts[j][1], 0x80C0C0C0)
+			local j = (i % 3) + 1
+			draw_line_points(pnts[i], pnts[j], 0xFFFF0000, _cone.y)
 
 		end
 	end
