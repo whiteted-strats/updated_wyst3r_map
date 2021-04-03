@@ -306,10 +306,28 @@ local function init_level_data()
 	end
 end
 
+local function get_distance_2d(_x1, _y1, _x2, _y2)
+	local diff_x = (_x1 - _x2)
+	local diff_y = (_y1 - _y2)
+	
+	return math.sqrt((diff_x * diff_x) + (diff_y * diff_y))
+end
+
+local function get_distance_2d_points(a,b)
+	return get_distance_2d(a.x, a.z, b.x, b.z)
+end
+
+local function get_distance_3d(_p1, _p2)
+	local diff_x = (_p1.x - _p2.x)
+	local diff_y = (_p1.y - _p2.y)
+	local diff_z = (_p1.z - _p2.z)
+	
+	return math.sqrt((diff_x * diff_x) + (diff_y * diff_y) + (diff_z * diff_z))
+end
+
 local level = {}
 
 local function load_level(_name)
-
 	level = level_data[_name]
 	
 	level.bounds.width = (level.bounds.max_x - level.bounds.min_x)
@@ -321,22 +339,62 @@ local function load_level(_name)
 	level.specific = {}
 	if _name == "Facility" then
 		level.specific["DD_lure_tile_point"] = TileData.get_points(TileData.getTileWithName(0x0FE421))[2]
+
+	elseif _name == "Surface_2" then
+
+		-- Waymarker code to-be
+		-- Currently doesn't cope with our limiting edge changing sides (and doesn't know what it is initially)
+		-- More broadly we're building a wall rather than the path that we should be on
+		-- Going to need calculation of the two lines coming within 30 of the point, then pick the right one using the edge.
+		local tiles = TileData.getTilesWithNames({0x074200, 0x074000, 0x072500, 0x071600, 0x03D100})
+
+		-- 1st waymarker is the current position, and will be treated specially because it's not on an edge.
+		local waymarkers = {}
+		table.insert(waymarkers, PlayerData.get_position())
+		local prevWaymarker = waymarkers[1]
+
+		local links, isAtBoundary, pnts, dist, minDist, waymarker
+		for _, tile in ipairs(tiles) do
+			links = TileData.get_links(tile)
+			isAtBoundary = {}
+			for i, lnk in ipairs(links) do
+				if (lnk == 0) then
+					isAtBoundary[i] = true
+					isAtBoundary[(i % table.getn(links)) + 1] = true
+				end
+			end
+
+			pnts = TileData.get_points(tile)
+			minDist = 1000000000	-- inf
+			waymarker = nil
+			for i, _ in pairs(isAtBoundary) do
+				dist = get_distance_3d(prevWaymarker, pnts[i])
+				if (dist < minDist) then
+					minDist = dist
+					waymarker = pnts[i]
+				end
+			end
+
+			table.insert(waymarkers, waymarker)
+			prevWaymarker = waymarker
+		end
+
+		-- Adjust 1st (player position) using the 2nd so that we're running against the left edge.
+		-- This is the same problem and it's not super easy, so just hack atm
+		local stretch_1 = get_distance_2d_points(waymarkers[1], waymarkers[2])
+		waymarkers[1].z = waymarkers[1].z - (30*(waymarkers[2].x - waymarkers[1].x) / stretch_1)
+		waymarkers[1].x = waymarkers[1].x + (30*(waymarkers[2].z - waymarkers[1].z) / stretch_1)
+
+		level.specific["waymarkers"] = waymarkers
+
+
+		-- And actual specific code - hill for A/SA lean
+		local hill_a = TileData.get_points(TileData.getTileWithName(0x067800))
+		local hill_b = TileData.get_points(TileData.getTileWithName(0x067900)) 
+		level.specific["lean_hill"] = {hill_b[2], hill_a[1], hill_a[2], hill_a[1], hill_b[1]}
 	end
-end
 
-local function get_distance_2d(_x1, _y1, _x2, _y2)
-	local diff_x = (_x1 - _x2)
-	local diff_y = (_y1 - _y2)
-	
-	return math.sqrt((diff_x * diff_x) + (diff_y * diff_y))
-end
 
-local function get_distance_3d(_p1, _p2)
-	local diff_x = (_p1.x - _p2.x)
-	local diff_y = (_p1.y - _p2.y)
-	local diff_z = (_p1.z - _p2.z)
-	
-	return math.sqrt((diff_x * diff_x) + (diff_y * diff_y) + (diff_z * diff_z))
 end
 
 local objects = {}
@@ -1124,7 +1182,24 @@ local function draw_level()
 			inner_color = 0xFF30D030,
 			outer_color = 0xFF30D030,
 		})
+
+	elseif mission.name == "Surface_2" then
+		local waymarkers = level.specific["waymarkers"]
+		local camera_height = level.floors[camera.floor].height
+		waymarkers[1].y = camera_height
+
+		for i = 1,table.getn(waymarkers)-1, 1 do
+			waymarkers[i+1].y = camera_height
+			draw_line_points(waymarkers[i], waymarkers[i+1], 0xFFFF8000)
+		end
+
+		local hill = level.specific["lean_hill"]
+		for i = 1, table.getn(hill)-1, 1 do
+			draw_line_points(hill[i], hill[i+1], 0xFF000000)
+		end
 	end
+
+
 end
 
 local function drawGuardCirclesForDoor(object, position)
@@ -1425,7 +1500,7 @@ local function draw_guard(_guard_data_reader)
 	local clipping_height = _guard_data_reader:get_value("clipping_height")		
 	
 	local state = guard_states[id]
-	local color = (action_to_color[state.action] or body_to_color[body_model])
+	local color = (action_to_color[state.action] or body_to_color[body_model] or colors.ouromov_color)
 	local alpha = colors.default_alpha	
 	
 	if state.is_fading then
@@ -1662,7 +1737,7 @@ local function draw_guard(_guard_data_reader)
 				gui.drawText(15,85, "Guard 'intolerance' = " .. _guard_data_reader:get_value("intolerance"))
 				gui.drawText(15,100,"Guard 'accuracy' = " .. shootingData.intolIncr)
 
-				draw_line_points(shootingData.gunPos, PlayerData.get_position(), 0xFF000000)
+				draw_line_points(shootingData.gunPos, PlayerData.get_position(), 0xFF0000FF)
 
 				for _, cone in ipairs(shootingData.cones) do
 					draw_cone(cone, false, true, true)
