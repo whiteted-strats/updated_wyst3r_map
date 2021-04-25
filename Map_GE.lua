@@ -71,9 +71,9 @@ mission.name = nil
 
 local target = {}
 
-target.type = "Guard" -- "Player" --
-target.name = "Some guard" --"Bond" --
-target.id = 0x0C
+target.type = "Player" --"Guard" -- 
+target.name = "Bond" --"Some guard" --
+target.id = 0x00
 target.position = nil
 target.height = nil
 
@@ -1612,7 +1612,6 @@ local function draw_guard(_guard_data_reader)
 			--draw_line(edge)
 		end
 	end
-
 
 	-- If we're the selected guard..
 
