@@ -1,6 +1,7 @@
 require "Data\\GE\\GameData"
 require "Data\\GE\\PlayerData"
 require "Data\\GE\\PresetData"
+require "Data\\GE\\ScriptData"
 require "Utilities\\QuadTree"
 require "Utilities\\GE\\IntroDataReader"
 require "Utilities\\GE\\GuardDataReader"
@@ -1450,6 +1451,8 @@ local function draw_entity(_entity)
 	end
 end
 
+local saved_target
+
 local function draw_guard(_guard_data_reader)
 	-- Work even if guards are off screen
 
@@ -1486,6 +1489,7 @@ local function draw_guard(_guard_data_reader)
 		[0x13] = colors.siberian_guard_a_color,
 		[0x14] = colors.naval_officer_color,
 		[0x15] = colors.siberian_special_forces_color,
+		[0x17] = colors.bond_dress_suit_color,
 		[0x20] = colors.civilian_color,
 		[0x23] = colors.scientist_color,
 		[0x25] = colors.siberian_guard_b_color,
@@ -1497,11 +1501,12 @@ local function draw_guard(_guard_data_reader)
 	local id = _guard_data_reader:get_value("id")	
 	local body_model = _guard_data_reader:get_value("body_model")
 	local collision_radius = _guard_data_reader:get_value("collision_radius")
-	local clipping_height = _guard_data_reader:get_value("clipping_height")		
+	local clipping_height = _guard_data_reader:get_value("clipping_height")
+	local ult_target_pos = _guard_data_reader:get_value("bond_position")
 	
 	local state = guard_states[id]
 	local color = (action_to_color[state.action] or body_to_color[body_model] or colors.ouromov_color)
-	local alpha = colors.default_alpha	
+	local alpha = colors.default_alpha
 	
 	if state.is_fading then
 		alpha = make_alpha_pair(constants.default_alpha * (_guard_data_reader:get_value("alpha") / 255.0))
@@ -1603,9 +1608,11 @@ local function draw_guard(_guard_data_reader)
 				x2 = x2, z2 = z2, y2 = clipping_height,
 				color=0xFFFF00FF, alpha=alpha,
 			}
-			draw_line(edge)
+			-- Not drawing these lines atm
+			--draw_line(edge)
 		end
 	end
+
 
 	-- If we're the selected guard..
 
@@ -1614,6 +1621,7 @@ local function draw_guard(_guard_data_reader)
 		-- Radius is 3D so we get the XZ slice of this sphere
 		local yDiff = PlayerData.get_value("position").y - state.position.y
 		local radius = PlayerData.getNoise() * 100
+		gui.drawText(15,30,"Noise = " .. PlayerData.getNoise())
 		radius = math.sqrt(radius*radius - yDiff*yDiff)
 		local colour = 0xFFFFFF00
 		if bit.band(state.flags, 2) ~= 0 then	-- set when they hear us
@@ -1924,6 +1932,8 @@ local function draw_explosion(_explosion_data_reader)
 	
 	local min_damage_radius = _explosion_data_reader:get_type_value("min_damage_radius")
 	local max_damage_radius = _explosion_data_reader:get_type_value("max_damage_radius")
+	local damage_factor = _explosion_data_reader:get_type_value("damage_factor")
+	--gui.drawText(15,30,"Damage factor: " .. damage_factor)
 	
 	local damage_interval = (animation_length / 4)
 	local damage_speed = ((max_damage_radius - min_damage_radius) / animation_length)	
